@@ -53,6 +53,16 @@ module.exports = async function (req, res) {
     'Content-Type': 'application/json'
   };
 
+  const estados = [
+    'Por rever',
+    'Em análise',
+    'Concluído'
+  ];
+
+  const uuidValido = id =>
+    typeof id === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
   try {
     if (req.method === 'GET') {
       if (!authenticated(req)) {
@@ -131,6 +141,150 @@ module.exports = async function (req, res) {
       if (!response.ok) throw new Error();
 
       return res.status(201).json({ ok: true });
+    }
+
+    if (req.method === 'PATCH' || req.method === 'DELETE') {
+      if (!authenticated(req)) {
+        return res.status(401).json({ ok: false });
+      }
+
+      if (req.headers.origin !== 'https://rastreios-linguagem.vercel.app') {
+        return res.status(403).json({ ok: false });
+      }
+
+      const b = req.body || {};
+      const id = b.id;
+
+      if (!uuidValido(id)) {
+        return res.status(400).json({
+          ok: false,
+          error: 'Identificador inválido.'
+        });
+      }
+
+      const destino = endpoint + '?id=eq.' + id;
+
+      if (req.method === 'DELETE') {
+        if (b.confirmacao !== true) {
+          return res.status(400).json({
+            ok: false,
+            error: 'Confirmação necessária.'
+          });
+        }
+
+        const response = await fetch(destino, {
+          method: 'DELETE',
+          headers: {
+            ...headers,
+            Prefer: 'return=representation'
+          }
+        });
+
+        if (!response.ok) throw new Error();
+
+        const eliminados = await response.json();
+
+        if (!eliminados.length) {
+          return res.status(404).json({ ok: false });
+        }
+
+        return res.status(200).json({ ok: true });
+      }
+
+      const alteracoes = {};
+
+      if (b.estado !== undefined) {
+        if (!estados.includes(b.estado)) {
+          return res.status(400).json({
+            ok: false,
+            error: 'Estado inválido.'
+          });
+        }
+
+        alteracoes.estado = b.estado;
+      }
+
+      let destinoAtualizacao = destino;
+
+      if (b.nota !== undefined) {
+        if (
+          typeof b.nota !== 'string' ||
+          !b.nota.trim() ||
+          b.nota.length > 5000
+        ) {
+          return res.status(400).json({
+            ok: false,
+            error: 'Nota inválida.'
+          });
+        }
+
+        const consulta = await fetch(
+          destino + '&select=notas_profissionais,ultima_atualizacao',
+          { headers }
+        );
+
+        if (!consulta.ok) throw new Error();
+
+        const dados = await consulta.json();
+
+        if (!dados.length) {
+          return res.status(404).json({ ok: false });
+        }
+
+        const notas = dados[0].notas_profissionais || [];
+
+        if (!Array.isArray(notas)) throw new Error();
+
+        alteracoes.notas_profissionais = [
+          ...notas,
+          {
+            id: crypto.randomUUID(),
+            texto: b.nota.trim(),
+            data: new Date().toISOString()
+          }
+        ];
+
+        const anterior = dados[0].ultima_atualizacao;
+
+        destinoAtualizacao += anterior
+          ? '&ultima_atualizacao=eq.' + encodeURIComponent(anterior)
+          : '&ultima_atualizacao=is.null';
+      }
+
+      if (!Object.keys(alteracoes).length) {
+        return res.status(400).json({
+          ok: false,
+          error: 'Nenhuma alteração indicada.'
+        });
+      }
+
+      alteracoes.ultima_atualizacao =
+        new Date().toISOString();
+
+      const response = await fetch(destinoAtualizacao, {
+        method: 'PATCH',
+        headers: {
+          ...headers,
+          Prefer: 'return=representation'
+        },
+        body: JSON.stringify(alteracoes)
+      });
+
+      if (!response.ok) throw new Error();
+
+      const atualizados = await response.json();
+
+      if (!atualizados.length) {
+        return res.status(409).json({
+          ok: false,
+          error: 'Registo alterado ou inexistente. Atualize a página.'
+        });
+      }
+
+      return res.status(200).json({
+        ok: true,
+        rastreio: atualizados[0]
+      });
     }
 
     return res.status(405).json({ ok: false });
