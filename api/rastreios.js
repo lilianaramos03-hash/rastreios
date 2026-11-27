@@ -94,6 +94,56 @@ module.exports = async function (req, res) {
         v && typeof v === 'object' &&
         !Array.isArray(v);
 
+            if (b.tipo_formulario === 'educadora') {
+        const ics = b.respostas_ics;
+
+        if (
+          !nomeValido(b.primeiro_nome) ||
+          !nomeValido(b.ultimo_nome) ||
+          !objetoValido(ics) ||
+          Object.keys(ics).length !== 7 ||
+          !Array.from({ length: 7 }, (_, i) =>
+            Number.isInteger(ics[String(i + 1)]) &&
+            ics[String(i + 1)] >= 1 &&
+            ics[String(i + 1)] <= 5
+          ).every(Boolean) ||
+          JSON.stringify(b).length > 50000
+        ) {
+          return res.status(400).json({
+            ok: false,
+            error: 'Dados incompletos ou respostas inválidas.'
+          });
+        }
+
+        const registoEducadora = {
+          primeiro_nome: b.primeiro_nome.trim(),
+          ultimo_nome: b.ultimo_nome.trim(),
+          data_nascimento: null,
+          tipo_formulario: 'educadora',
+          respostas_edl: {},
+          respostas_abertas: {},
+          respostas_ics: ics,
+          observacoes: String(b.observacoes || '').slice(0, 5000),
+          confirmacao_revisao: false,
+          autorizacao: false,
+          versao_formulario: '0.7',
+          estado: 'Por rever'
+        };
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            ...headers,
+            Prefer: 'return=minimal'
+          },
+          body: JSON.stringify(registoEducadora)
+        });
+
+        if (!response.ok) throw new Error();
+
+        return res.status(201).json({ ok: true });
+      }
+
       const data = new Date(b.data_nascimento);
 
       if (
