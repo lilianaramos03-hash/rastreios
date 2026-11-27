@@ -126,7 +126,7 @@ module.exports = async function (req, res) {
           observacoes: String(b.observacoes || '').slice(0, 5000),
           confirmacao_revisao: false,
           autorizacao: false,
-          versao_formulario: '0.7',
+          versao_formulario: '0.8-teste',
           estado: 'Por rever'
         };
 
@@ -165,6 +165,19 @@ module.exports = async function (req, res) {
         });
       }
 
+      const edl = b.respostas_edl;
+      const today = new Intl.DateTimeFormat('sv-SE', {timeZone:'Europe/Lisbon',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+      const [y,m,d] = b.data_nascimento.split('-').map(Number);
+      const [Y,M,D] = today.split('-').map(Number);
+      const age = (Y-y)*12+M-m-(D<d?1:0);
+      const expected = [0,7,13,19,24,36,48,60,72].reduce((a,v,i)=>a+(age>=v?[9,10,6,10,24,21,14,10,7][i]:0),0);
+      if (age < 0 || edl.limit !== expected || !Array.isArray(edl.checked) ||
+          edl.checked.length > expected || new Set(edl.checked).size !== edl.checked.length ||
+          !edl.checked.every(i=>Number.isInteger(i)&&i>=0&&i<expected) ||
+          Object.keys(b.respostas_abertas).length !== 4 ||
+          ![0,1,2,3].every(i=>typeof b.respostas_abertas['q'+i]==='string' && b.respostas_abertas['q'+i].length<=5000)) {
+        return res.status(400).json({ok:false,error:'Respostas inválidas. Reveja o formulário.'});
+      }
       const registo = {
         primeiro_nome: b.primeiro_nome.trim(),
         ultimo_nome: b.ultimo_nome.trim(),
@@ -175,7 +188,7 @@ module.exports = async function (req, res) {
         observacoes: String(b.observacoes || '').slice(0, 5000),
         confirmacao_revisao: true,
         autorizacao: true,
-        versao_formulario: '0.5',
+        versao_formulario: '0.8-teste',
         estado: 'Por rever'
       };
 
